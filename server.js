@@ -1,6 +1,8 @@
 const express = require('express');
 const mysql = require('mysql2');
-const cors = require('cors'); // Para permitir que el frontend se conecte al backend
+const cors = require('cors'); 
+const { getMongoDb } = require('./db');
+const bodyParser = require('body-parser');
 
 const app = express();
 const port = 3000;
@@ -23,6 +25,7 @@ mysqlConnection.connect((err) => {
 
 // Middleware para habilitar CORS (acceso desde el frontend)
 app.use(cors());
+app.use(bodyParser.json());
 
 // Ruta para obtener todos los productos
 app.get('/productos', (req, res) => {
@@ -43,7 +46,6 @@ app.get('/sucursales', (req, res) => {
   });
 });
 
-// Ruta para obtener un producto por su ID
 // Ruta para obtener un producto por su ID
 app.get('/producto/:id_producto', (req, res) => {
     const id_producto = req.params.id_producto; // Obtenemos el id del parámetro de la URL
@@ -106,4 +108,71 @@ app.post('/comprar/:id_producto', (req, res) => {
     });
   });
   
+  app.post('/comentarios/:id_producto', (req, res) => {
+    const { id_producto } = req.params;
+    const { autor, contenido } = req.body;
   
+    // Aquí puedes guardar el comentario en la base de datos, por ahora simularemos la operación.
+    console.log(`Comentario recibido para el producto ${id_producto}:`);
+    console.log(`Autor: ${autor}`);
+    console.log(`Contenido: ${contenido}`);
+  
+    // Respuesta simulada
+    res.status(200).json({ mensaje: 'Comentario publicado exitosamente', id_producto, autor, contenido });
+  });
+  
+  // Iniciar servidor
+  app.listen(port, () => {
+    console.log(`Servidor corriendo en http://localhost:${port}`);
+  });
+  
+  // Ruta para obtener comentarios de un producto
+  app.get('/comentarios/:id_producto', async (req, res) => {
+    const id_producto = parseInt(req.params.id_producto, 10);
+
+    if (isNaN(id_producto)) {
+        return res.status(400).json({ error: "El ID del producto debe ser un número válido" });
+    }
+
+    try {
+        const db = await getMongoDb();
+        const comentariosCollection = db.collection('comentarios');
+        const comentarios = await comentariosCollection.find({ id_producto }).toArray();
+        res.status(200).json(comentarios);
+    } catch (error) {
+        console.error("Error al obtener comentarios:", error);
+        res.status(500).json({ error: "Error al obtener comentarios" });
+    }
+});
+
+app.post('/calificar', async (req, res) => {
+  const { id_producto, calificacion } = req.body;
+  try {
+    const nuevaCalificacion = new Calificacion({ id_producto, calificacion });
+    await nuevaCalificacion.save();
+    
+    // Calcular el nuevo promedio de calificación
+    const calificaciones = await Calificacion.find({ id_producto });
+    const promedio = calificaciones.reduce((sum, cal) => sum + cal.calificacion, 0) / calificaciones.length;
+
+    // Actualizar el promedio de la calificación del producto en la base de datos
+    await Producto.findByIdAndUpdate(id_producto, { promedio_calificacion: promedio });
+
+    res.status(200).send({ mensaje: 'Calificación guardada y promedio actualizado', promedio });
+  } catch (error) {
+    res.status(500).send({ error: 'Error al calificar el producto' });
+  }
+});
+
+
+const mongoose = require('mongoose');
+
+const calificacionSchema = new mongoose.Schema({
+  id_producto: { type: mongoose.Schema.Types.ObjectId, ref: 'Producto', required: true },
+  calificacion: { type: Number, min: 1, max: 5, required: true },
+});
+
+const Calificacion = mongoose.model('Calificacion', calificacionSchema);
+
+module.exports = Calificacion;
+
